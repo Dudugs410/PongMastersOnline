@@ -83,6 +83,28 @@ public static class PongSceneBuilder
         return AssetDatabase.LoadAssetAtPath<Sprite>(path);
     }
 
+    // Power-up icon from Assets/Art/PowerUps/<name>.png, imported as a crisp sprite that fills
+    // `size` world units. Returns null if there is no image for that power-up.
+    static Sprite LoadIcon(string name, float size)
+    {
+        string path = $"{ArtFolder}/PowerUps/{name}.png";
+        if (!File.Exists(path)) return null;
+        AssetDatabase.ImportAsset(path);
+        if (AssetImporter.GetAtPath(path) is not TextureImporter importer) return null;
+
+        var tex = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+        importer.textureType = TextureImporterType.Sprite;
+        importer.spriteImportMode = SpriteImportMode.Single;
+        importer.spritePixelsPerUnit = Mathf.Max(tex.width, tex.height) / size;
+        importer.mipmapEnabled = false;
+        importer.alphaIsTransparency = true;
+        importer.filterMode = FilterMode.Point;   // pixel art
+        importer.textureCompression = TextureImporterCompression.Uncompressed;
+        importer.SaveAndReimport();
+
+        return AssetDatabase.LoadAssetAtPath<Sprite>(path);
+    }
+
     static GameObject SavePrefab(GameObject go, string name)
     {
         GameObject prefab = PrefabUtility.SaveAsPrefabAsset(go, $"{PrefabFolder}/{name}.prefab");
@@ -152,12 +174,24 @@ public static class PongSceneBuilder
         label.rectTransform.sizeDelta = new Vector2(size - 0.1f, size - 0.1f);
         label.sortingOrder = 3;
 
+        var iconGo = new GameObject("Icon");
+        iconGo.transform.SetParent(go.transform, false);
+        var icon = iconGo.AddComponent<SpriteRenderer>();
+        icon.sortingOrder = 3;
+        icon.enabled = false;
+
         go.AddComponent<NetworkObject>();
 
         var box = go.AddComponent<PowerUpBox>();
         box.spriteRenderer = sr;
         box.label = label;
         box.halfSize = size * 0.5f;
+        box.iconRenderer = icon;
+        box.multiBallIcon = LoadIcon("MultiBall", size);
+        box.speedUpIcon = LoadIcon("SpeedUp", size);
+        box.moveBallIcon = LoadIcon("MoveBall", size);
+        box.growIcon = LoadIcon("Grow", size);
+        box.catchIcon = LoadIcon("Catch", size);
 
         return SavePrefab(go, "PowerUpBox");
     }
@@ -360,13 +394,6 @@ public static class PongSceneBuilder
 
         menu.messageText = Text("Message", panel, "", 40, new Color(1f, 0.8f, 0.3f), TextAlignmentOptions.Center,
                                 Center, new Vector2(0f, -280f), new Vector2(1400f, 80f));
-
-        Text("Hint", panel,
-             "Host: start a match and share the address shown on screen.\n" +
-             "Join: type the host's address. Same Wi-Fi/LAN works out of the box; over the internet the host must forward UDP port 7777.\n" +
-             "Controls: W/S or Up/Down, Space to fire a caught ball. First to 10 wins.",
-             28, new Color(1f, 1f, 1f, 0.45f), TextAlignmentOptions.Center, Center, new Vector2(0f, -410f),
-             new Vector2(1700f, 160f));
     }
 
     static readonly Vector2 Center = new(0.5f, 0.5f);

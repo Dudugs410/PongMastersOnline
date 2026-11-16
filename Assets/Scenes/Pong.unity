@@ -1693,11 +1693,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: 'Host: start a match and share the address shown on screen.
-
-    Join: type the host''s address. Same Wi-Fi/LAN works out of the box; over the internet the host must forward UDP port 7777.
-
-    Controls: W/S or Up/Down, Space to fire a caught ball. First to 10 wins.'
+  m_text:
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}

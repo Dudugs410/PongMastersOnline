@@ -22,6 +22,14 @@ public class PowerUpBox : NetworkBehaviour
     public Color growColor = new(1f, 0.55f, 0.1f);        // orange
     public Color catchColor = new(0.2f, 0.9f, 1f);        // cyan
 
+    [Header("Icons (optional: replace the colored box and label)")]
+    public SpriteRenderer iconRenderer;
+    public Sprite multiBallIcon;
+    public Sprite speedUpIcon;
+    public Sprite moveBallIcon;
+    public Sprite growIcon;
+    public Sprite catchIcon;
+
     readonly NetworkVariable<PowerUpType> type = new(PowerUpType.MultiBall);
 
     public PowerUpType Type
@@ -66,16 +74,29 @@ public class PowerUpBox : NetworkBehaviour
 
     void ApplyVisuals(PowerUpType t)
     {
-        (Color color, string text) = t switch
+        (Color color, string text, Sprite icon) = t switch
         {
-            PowerUpType.MultiBall => (multiBallColor, "x2"),
-            PowerUpType.SpeedUp => (speedUpColor, "SPD"),
-            PowerUpType.MoveBall => (moveBallColor, "AIM"),
-            PowerUpType.Grow => (growColor, "BIG"),
-            _ => (catchColor, "CATCH")
+            PowerUpType.MultiBall => (multiBallColor, "x2", multiBallIcon),
+            PowerUpType.SpeedUp => (speedUpColor, "SPD", speedUpIcon),
+            PowerUpType.MoveBall => (moveBallColor, "AIM", moveBallIcon),
+            PowerUpType.Grow => (growColor, "BIG", growIcon),
+            _ => (catchColor, "CATCH", catchIcon)
         };
 
+        // With an icon, show only the icon; otherwise the colored box with its label.
+        bool hasIcon = icon != null && iconRenderer != null;
+        if (iconRenderer)
+        {
+            iconRenderer.sprite = icon;
+            iconRenderer.enabled = hasIcon;
+        }
+
+        spriteRenderer.enabled = !hasIcon;
         spriteRenderer.color = color;
-        if (label) label.text = text;
+        if (label)
+        {
+            label.text = text;
+            label.enabled = !hasIcon;
+        }
     }
 }
