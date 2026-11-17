@@ -3,8 +3,6 @@ using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-// Where a paddle was, which way it was moving and when. The other player predicts the paddle
-// from this, so it only needs re-sending when the direction changes.
 public struct PaddleMotion : INetworkSerializable
 {
     public float y;
@@ -19,9 +17,6 @@ public struct PaddleMotion : INetworkSerializable
     }
 }
 
-// One prefab is used for both players:
-// the host's paddle is RED on the left, the client's paddle is BLUE on the right.
-// Each player moves their own paddle instantly and judges hits on it themselves.
 public class PlayerPaddle : NetworkBehaviour
 {
     public float moveSpeed = 8f;
@@ -39,22 +34,19 @@ public class PlayerPaddle : NetworkBehaviour
     public static PlayerPaddle Blue { get; private set; }
     public static PlayerPaddle Get(PlayerSide side) => side == PlayerSide.Red ? Red : Blue;
 
-    // Written by the owner (this player).
     readonly NetworkVariable<FixedString64Bytes> playerName = new(
         default, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
 
     readonly NetworkVariable<PaddleMotion> motion = new(
         default, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
 
-    // Written by the host. Stored as "ends at" times on the shared clock, so picking a power-up
-    // up again just moves the end time forward (resets the duration, never stacks).
     readonly NetworkVariable<double> speedBoostEndTime = new(0);
     readonly NetworkVariable<double> moveBallEndTime = new(0);
     readonly NetworkVariable<double> growEndTime = new(0);
     readonly NetworkVariable<bool> hasCatch = new(false);
 
-    float ownerY;          // owner: the real position
-    float shownTarget;     // others: last predicted position, to smooth corrections
+    float ownerY;
+    float shownTarget;
     float visualOffset;
     PaddleMotion shownMotion;
 
@@ -71,10 +63,8 @@ public class PlayerPaddle : NetworkBehaviour
         }
     }
 
-    // -1 = down, 0 = still, 1 = up. Read by the host to steer balls.
     public int MoveInput => motion.Value.dir;
 
-    // Where this player's screen shows the paddle right now.
     public float DisplayY { get; private set; }
 
     public float HalfHeight => baseHeight * (HasGrow ? growMultiplier : 1f) * 0.5f;
@@ -119,8 +109,6 @@ public class PlayerPaddle : NetworkBehaviour
         if (Blue == this) Blue = null;
     }
 
-    // ---------- Power-ups (host only) ----------
-
     public void GrantSpeedBoost(float duration)
     {
         if (IsServer) speedBoostEndTime.Value = Now + duration;
@@ -148,7 +136,6 @@ public class PlayerPaddle : NetworkBehaviour
         return true;
     }
 
-    // After a pause, push the timers back so nobody loses power-up time.
     public void ExtendEffects(double seconds)
     {
         if (!IsServer) return;
@@ -167,8 +154,6 @@ public class PlayerPaddle : NetworkBehaviour
         hasCatch.Value = false;
     }
 
-    // ---------- Every frame ----------
-
     void Update()
     {
         if (!IsSpawned) return;
@@ -186,16 +171,13 @@ public class PlayerPaddle : NetworkBehaviour
         ownerY = Mathf.Clamp(ownerY + direction * Speed * Time.deltaTime, -YLimit, YLimit);
         DisplayY = ownerY;
 
-        // Only send when the other player's prediction would be wrong.
         float theirGuess = Predict(motion.Value, Now);
         if (direction != motion.Value.dir || Mathf.Abs(theirGuess - ownerY) > 0.02f)
             motion.Value = new PaddleMotion { y = ownerY, dir = (sbyte)direction, time = Now };
 
-        // We judge hits on our own paddle, using exactly what we see.
         foreach (Ball ball in Ball.All.ToArray())
             ball.CheckPaddle(this);
 
-        // Catch power-up: Space fires the held ball (or it fires itself after a few seconds).
         if (GameManager.Instance == null || !GameManager.Instance.IsPlaying) return;
 
         bool fire = Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame;
@@ -218,7 +200,6 @@ public class PlayerPaddle : NetworkBehaviour
         return direction;
     }
 
-    // Testing aid (-bot on the command line): follow the nearest ball heading our way.
     int BotInput()
     {
         float bestTime = float.MaxValue;
@@ -246,7 +227,6 @@ public class PlayerPaddle : NetworkBehaviour
     {
         float target = Predict(motion.Value, NetClock.DisplayNow);
 
-        // New info arrived: glide from where we were showing it instead of snapping.
         PaddleMotion m = motion.Value;
         if (m.time != shownMotion.time || m.y != shownMotion.y || m.dir != shownMotion.dir)
         {
@@ -260,7 +240,6 @@ public class PlayerPaddle : NetworkBehaviour
         DisplayY = Mathf.Clamp(target + visualOffset, -YLimit, YLimit);
     }
 
-    // Where the paddle is at time t if it kept moving the same way.
     float Predict(PaddleMotion m, double t)
     {
         float dt = (float)System.Math.Max(0.0, t - m.time);

@@ -9,9 +9,6 @@ using UnityEngine.EventSystems;
 using UnityEngine.InputSystem.UI;
 using UnityEngine.UI;
 
-// Builds the whole game (sprites, prefabs and the Pong scene) from scratch.
-// Menu: Pong > Rebuild Game Scene. Safe to run again; it overwrites what it made before.
-// Balls move along computed paths (see BallState), so nothing here uses physics.
 public static class PongSceneBuilder
 {
     const string ArtFolder = "Assets/Art";
@@ -29,7 +26,7 @@ public static class PongSceneBuilder
 
         Directory.CreateDirectory(ArtFolder);
         Directory.CreateDirectory(PrefabFolder);
-        AssetDatabase.DeleteAsset($"{ArtFolder}/Bouncy.physicsMaterial2D");   // left over from the physics version
+        AssetDatabase.DeleteAsset($"{ArtFolder}/Bouncy.physicsMaterial2D");
 
         square = MakeSprite("Square", 32, false);
         circle = MakeSprite("Circle", 64, true);
@@ -46,9 +43,6 @@ public static class PongSceneBuilder
         Debug.Log("Pong scene built: " + ScenePath);
     }
 
-    // ---------- Assets ----------
-
-    // A plain white sprite exactly 1 world unit across, so scale = size in units.
     static Sprite MakeSprite(string name, int size, bool round)
     {
         string path = $"{ArtFolder}/{name}.png";
@@ -62,7 +56,7 @@ public static class PongSceneBuilder
             if (round)
             {
                 float d = Vector2.Distance(new Vector2(x + 0.5f, y + 0.5f), new Vector2(r, r));
-                alpha = Mathf.Clamp01(r - d);   // 1px soft edge
+                alpha = Mathf.Clamp01(r - d);
             }
             tex.SetPixel(x, y, new Color(1f, 1f, 1f, alpha));
         }
@@ -83,8 +77,6 @@ public static class PongSceneBuilder
         return AssetDatabase.LoadAssetAtPath<Sprite>(path);
     }
 
-    // Power-up icon from Assets/Art/PowerUps/<name>.png, imported as a crisp sprite that fills
-    // `size` world units. Returns null if there is no image for that power-up.
     static Sprite LoadIcon(string name, float size)
     {
         string path = $"{ArtFolder}/PowerUps/{name}.png";
@@ -98,7 +90,7 @@ public static class PongSceneBuilder
         importer.spritePixelsPerUnit = Mathf.Max(tex.width, tex.height) / size;
         importer.mipmapEnabled = false;
         importer.alphaIsTransparency = true;
-        importer.filterMode = FilterMode.Point;   // pixel art
+        importer.filterMode = FilterMode.Point;
         importer.textureCompression = TextureImporterCompression.Uncompressed;
         importer.SaveAndReimport();
 
@@ -137,7 +129,7 @@ public static class PongSceneBuilder
         var sr = go.AddComponent<SpriteRenderer>();
         sr.sprite = circle;
         sr.sortingOrder = 2;
-        sr.enabled = false;   // shown once it's in play
+        sr.enabled = false;
 
         go.AddComponent<NetworkObject>();
 
@@ -210,14 +202,11 @@ public static class PongSceneBuilder
         return list;
     }
 
-    // ---------- Scene ----------
-
     static void BuildScene(GameObject playerPrefab, GameObject ballPrefab, GameObject extraBallPrefab,
                            GameObject boxPrefab, NetworkPrefabsList prefabList)
     {
         var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
-        // Camera
         var camGo = new GameObject("Main Camera") { tag = "MainCamera" };
         camGo.transform.position = new Vector3(0f, 0f, -10f);
         var cam = camGo.AddComponent<Camera>();
@@ -228,7 +217,6 @@ public static class PongSceneBuilder
         camGo.AddComponent<AudioListener>();
         camGo.AddComponent<CameraFit>();
 
-        // Networking
         var netGo = new GameObject("NetworkManager");
         var transport = netGo.AddComponent<UnityTransport>();
         var net = netGo.AddComponent<NetworkManager>();
@@ -241,7 +229,6 @@ public static class PongSceneBuilder
         };
         net.NetworkConfig.Prefabs.NetworkPrefabsLists.Add(prefabList);
 
-        // Field (just visuals: walls and goals are handled in code using PongField)
         var field = new GameObject("Field");
         float wallCenter = PongField.WallInnerY + PongField.WallThickness * 0.5f;
         MakeBlock("Top Wall", field.transform, new Vector2(0f, wallCenter), new Vector2(40f, PongField.WallThickness), FieldColor);
@@ -253,11 +240,9 @@ public static class PongSceneBuilder
             MakeBlock("Dash", centerLine.transform, new Vector2(0f, y), new Vector2(0.08f, 0.4f),
                       new Color(1f, 1f, 1f, 0.15f));
 
-        // Main ball (placed in the scene, so it exists for both players without spawning)
         var ballGo = (GameObject)PrefabUtility.InstantiatePrefab(ballPrefab);
         ballGo.transform.position = Vector3.zero;
 
-        // Game logic (NetClock lives here too: it needs a NetworkObject for its pings)
         var gmGo = new GameObject("GameManager");
         gmGo.AddComponent<NetworkObject>();
         gmGo.AddComponent<NetClock>();
@@ -274,8 +259,6 @@ public static class PongSceneBuilder
 
         EditorSceneManager.SaveScene(scene, ScenePath);
 
-        // NetworkObjects build their scene id from the scene's path, which didn't exist until the save above.
-        // Regenerate it now, otherwise Netcode won't recognize them as in-scene placed objects.
         var validate = typeof(NetworkObject).GetMethod("OnValidate",
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
         foreach (NetworkObject no in Object.FindObjectsByType<NetworkObject>(FindObjectsInactive.Include))
@@ -286,7 +269,6 @@ public static class PongSceneBuilder
         EditorSceneManager.MarkSceneDirty(scene);
         EditorSceneManager.SaveScene(scene);
 
-        // Make this the only scene in the build.
         EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(ScenePath, true) };
     }
 
@@ -302,8 +284,6 @@ public static class PongSceneBuilder
         sr.color = color;
         return go;
     }
-
-    // ---------- UI ----------
 
     static void BuildUI(GameManager gm, GameObject netGo)
     {
@@ -321,7 +301,6 @@ public static class PongSceneBuilder
         canvasGo.AddComponent<GraphicRaycaster>();
         Transform root = canvasGo.transform;
 
-        // HUD
         RectTransform hud = Stretch(new GameObject("HUD", typeof(RectTransform)), root);
 
         gm.hud = hud.gameObject;
@@ -334,7 +313,6 @@ public static class PongSceneBuilder
         gm.pingText = Text("Ping", hud, "", 28, new Color(1f, 1f, 1f, 0.45f), TextAlignmentOptions.BottomLeft,
                            Vector2.zero, new Vector2(30f, 20f), new Vector2(400f, 50f));
 
-        // Game over
         RectTransform over = Stretch(new GameObject("Game Over Panel", typeof(RectTransform)), root);
         over.gameObject.AddComponent<Image>().color = new Color(0f, 0f, 0f, 0.75f);
         gm.gameOverPanel = over.gameObject;
@@ -354,7 +332,6 @@ public static class PongSceneBuilder
                                      new Vector2(1400f, 100f)).gameObject;
         over.gameObject.SetActive(false);
 
-        // Menu, leave button and connection overlay (driven by NetworkMenu)
         var menu = netGo.AddComponent<NetworkMenu>();
 
         menu.leaveButton = MakeButton("Leave", root, "Leave", Vector2.zero, new Vector2(200f, 70f), 36);

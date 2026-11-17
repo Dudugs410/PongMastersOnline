@@ -2,7 +2,6 @@ using System.Collections.Generic;
 using Unity.Netcode;
 using UnityEngine;
 
-// Spawns power-up boxes during a match, checks when a ball goes through one and applies the effect (host only).
 public class PowerUpManager : NetworkBehaviour
 {
     public static PowerUpManager Instance { get; private set; }
@@ -12,8 +11,8 @@ public class PowerUpManager : NetworkBehaviour
     public Ball extraBallPrefab;
 
     [Header("Spawning")]
-    public Vector2 spawnArea = new(5f, 3.5f);   // boxes spawn within ±x, ±y
-    public float minDistanceFromCenter = 1.5f;  // keep the ball's launch spot clear
+    public Vector2 spawnArea = new(5f, 3.5f);
+    public float minDistanceFromCenter = 1.5f;
     public float minSpawnDelay = 5f;
     public float maxSpawnDelay = 10f;
     public int maxBoxes = 2;
@@ -22,8 +21,8 @@ public class PowerUpManager : NetworkBehaviour
     public float speedBoostDuration = 10f;
     public float moveBallDuration = 10f;
     public float growDuration = 10f;
-    public float extraBallAngle = 20f;          // the extra ball leaves this many degrees off the original
-    [Range(0.1f, 1f)] public float extraBallSpeed = 0.6f;   // and this much slower
+    public float extraBallAngle = 20f;
+    [Range(0.1f, 1f)] public float extraBallSpeed = 0.6f;
     public int maxExtraBalls = 3;
 
     readonly List<PowerUpBox> boxes = new();
@@ -52,14 +51,12 @@ public class PowerUpManager : NetworkBehaviour
     {
         if (!IsServer || !IsSpawned) return;
 
-        // Forget anything that was already despawned.
         boxes.RemoveAll(b => b == null || !b.IsSpawned);
         extraBalls.RemoveAll(b => b == null || !b.IsSpawned);
 
         GameManager gm = GameManager.Instance;
         if (gm == null || !gm.IsPlaying)
         {
-            // Paused or between matches: hold the spawn timer.
             nextSpawnTime += Time.deltaTime;
             return;
         }
@@ -104,7 +101,6 @@ public class PowerUpManager : NetworkBehaviour
         boxes.Add(box);
     }
 
-    // A white ball (nobody has touched it yet this point) doesn't collect anything.
     void CheckCollection(PowerUpBox box)
     {
         double now = NetClock.Now;
@@ -129,7 +125,6 @@ public class PowerUpManager : NetworkBehaviour
                 SpawnExtraBall(ball, side);
                 break;
 
-            // Picking a timed power-up up again only resets its timer; it doesn't stack.
             case PowerUpType.SpeedUp:
                 if (paddle != null) paddle.GrantSpeedBoost(speedBoostDuration);
                 break;
@@ -143,7 +138,6 @@ public class PowerUpManager : NetworkBehaviour
                 break;
 
             case PowerUpType.Catch:
-                // The next ball to reach this player's paddle sticks to it until they fire it.
                 if (paddle != null) paddle.GrantCatch();
                 break;
         }
@@ -159,7 +153,6 @@ public class PowerUpManager : NetworkBehaviour
         source.State.Simulate(now, source.LimitY, out Vector2 position, out Vector2 velocity);
         if (velocity.sqrMagnitude < 0.01f) return;
 
-        // One slower ball, angled a little off the original (away from the nearest wall).
         float angle = position.y > 0f ? -extraBallAngle : extraBallAngle;
         if (velocity.x < 0f) angle = -angle;
         Vector2 direction = Quaternion.Euler(0f, 0f, angle) * velocity.normalized;
@@ -176,8 +169,6 @@ public class PowerUpManager : NetworkBehaviour
         boxes.Remove(box);
         if (box.IsSpawned) box.NetworkObject.Despawn(true);
     }
-
-    // ---------- Cleanup (called by GameManager) ----------
 
     public void RemoveExtraBall(Ball ball)
     {

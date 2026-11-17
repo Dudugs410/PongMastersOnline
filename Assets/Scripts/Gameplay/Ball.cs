@@ -2,16 +2,6 @@ using System.Collections.Generic;
 using Unity.Netcode;
 using UnityEngine;
 
-// A ball's path is fully described by its BallState, so instead of streaming positions the host
-// only sends a new state when something changes. Every player computes the position for the same
-// shared clock (NetClock.Now), which keeps the client's view in step with the host's.
-//
-// Paddle hits are decided by the player who owns that paddle, using what they see right now.
-// The client applies its own hit immediately (prediction) and tells the host, which rewinds the
-// ball to the moment of the hit and continues from there.
-//
-// Color: white at the start of each point, then red/blue for whoever touched it last.
-// The same script is used for the small extra balls (tick "isExtraBall" on that prefab).
 public class Ball : NetworkBehaviour
 {
     public static readonly List<Ball> All = new();
@@ -27,17 +17,17 @@ public class Ball : NetworkBehaviour
     public float launchDelay = 1f;
 
     [Header("Paddle bounce")]
-    public float maxBounceAngle = 50f;  // hitting the paddle's edge sends the ball out at this angle
+    public float maxBounceAngle = 50f;
     public float speedUpPerHit = 0.5f;
     public float maxSpeed = 18f;
 
     [Header("Catch power-up")]
-    public float fastMultiplier = 2f;   // a shot ball travels this much faster until the other player hits it
-    public float autoShootAfter = 3f;   // the holder fires automatically after this many seconds
+    public float fastMultiplier = 2f;
+    public float autoShootAfter = 3f;
 
     [Header("Move Ball power-up")]
-    public float steerStrength = 10f;   // how fast the player can bend the ball
-    public float maxSteerAngle = 60f;   // stops the ball from going straight up/down
+    public float steerStrength = 10f;
+    public float maxSteerAngle = 60f;
     public float steerInterval = 0.05f;
 
     static readonly Color RedColor = Color.red;
@@ -45,17 +35,15 @@ public class Ball : NetworkBehaviour
 
     readonly NetworkVariable<BallState> state = new();
 
-    // Our own hit/shot, shown right away until the host confirms it.
     BallState predicted;
     bool hasPredicted;
     double predictedAt;
 
-    // Smooths out corrections so the ball glides instead of teleporting.
     BallState shown;
     bool shownPredicted;
     Vector2 visualOffset;
 
-    ushort decidedVersion = ushort.MaxValue;   // the paddle owner judges each path segment only once
+    ushort decidedVersion = ushort.MaxValue;
     bool decidedPredicted;
     double nextSteerTime;
 
@@ -100,8 +88,6 @@ public class Ball : NetworkBehaviour
         spriteRenderer.enabled = false;
     }
 
-    // ---------- Host: changing the state ----------
-
     void SetState(BallState s)
     {
         s.version = (ushort)(state.Value.version + 1);
@@ -119,7 +105,6 @@ public class Ball : NetworkBehaviour
         });
     }
 
-    // Main ball: back to the center, launched after a short delay.
     public void Serve()
     {
         if (!IsServer) return;
@@ -155,7 +140,6 @@ public class Ball : NetworkBehaviour
         if (IsServer && IsSpawned) NetworkObject.Despawn(true);
     }
 
-    // Connection trouble: stop where we are.
     public void Freeze(double t)
     {
         if (!IsServer) return;
@@ -170,7 +154,6 @@ public class Ball : NetworkBehaviour
         SetState(s);
     }
 
-    // Carry on from the same spot at resumeAt. frozenFor pushes the Catch auto-shot timer back too.
     public void Unfreeze(double resumeAt, double frozenFor)
     {
         if (!IsServer) return;
@@ -189,8 +172,6 @@ public class Ball : NetworkBehaviour
         }
     }
 
-    // ---------- Paddle hits (run by the paddle's owner) ----------
-
     public void CheckPaddle(PlayerPaddle paddle)
     {
         BallState s = State;
@@ -200,20 +181,19 @@ public class Ball : NetworkBehaviour
 
         double now = NetClock.Now;
         double contactTime = s.TimeAtX(PongField.ContactX(side, radius));
-        if (contactTime > now) return;   // hasn't reached the paddle yet
+        if (contactTime > now) return;
 
-        // Judge each segment of the path once.
         if (decidedVersion == s.version && decidedPredicted == hasPredicted) return;
         decidedVersion = s.version;
         decidedPredicted = hasPredicted;
 
-        if (contactTime < s.time - 0.0001) return;   // this segment starts behind the paddle
-        if (now - contactTime > 0.3) return;         // learned about it too late; let the host call it
+        if (contactTime < s.time - 0.0001) return;
+        if (now - contactTime > 0.3) return;
 
         float ballY = PositionOf(s, contactTime).y;
         float paddleY = paddle.DisplayY;
         float halfHeight = paddle.HalfHeight;
-        if (Mathf.Abs(ballY - paddleY) > halfHeight + radius) return;   // missed
+        if (Mathf.Abs(ballY - paddleY) > halfHeight + radius) return;
 
         bool stick = paddle.HasCatch;
         if (IsServer)
@@ -227,7 +207,6 @@ public class Ball : NetworkBehaviour
         }
     }
 
-    // Catch power-up: fire the ball we're holding.
     public void TryShoot(PlayerPaddle paddle)
     {
         BallState s = State;
@@ -263,7 +242,6 @@ public class Ball : NetworkBehaviour
         if (s.mode != BallMode.Moving || s.hitSeq != fromHitSeq) { RejectHit("ball state changed"); return; }
         if (Mathf.Sign(s.vel.x) != PongField.TowardSide(side)) { RejectHit("ball going the other way"); return; }
 
-        // Light sanity checks: the hit must be recent and match where we think the ball was.
         double now = NetClock.Now;
         if (t > now + 0.1 || t < s.time - 0.5) { RejectHit($"bad time ({now - t:0.000}s ago)"); return; }
         if (Mathf.Abs(PositionOf(s, t).y - ballY) > 0.75f) { RejectHit("ball wasn't there"); return; }
@@ -309,7 +287,6 @@ public class Ball : NetworkBehaviour
             return s;
         }
 
-        // Classic Pong: where the ball hits the paddle decides the angle it leaves at.
         s.mode = BallMode.Moving;
         s.baseSpeed = Mathf.Min(s.baseSpeed + speedUpPerHit, maxSpeed);
         s.vel = BounceVelocity(side, (ballY - paddleY) / halfHeight, s.baseSpeed);
@@ -343,13 +320,10 @@ public class Ball : NetworkBehaviour
         predictedAt = Time.realtimeSinceStartupAsDouble;
     }
 
-    // ---------- Every frame ----------
-
     void Update()
     {
         if (!IsSpawned) return;
 
-        // Drop our prediction once the host has caught up with it (or ignored it).
         if (hasPredicted)
         {
             int ahead = (sbyte)(predicted.hitSeq - state.Value.hitSeq);
@@ -369,7 +343,6 @@ public class Ball : NetworkBehaviour
         BallState s = state.Value;
         double now = NetClock.Now;
 
-        // Move Ball power-up: whoever's color the ball has can bend it up/down.
         if (s.mode == BallMode.Moving && s.owner != 0 && now >= s.time && now >= nextSteerTime)
         {
             PlayerPaddle paddle = PlayerPaddle.Get((PlayerSide)s.owner);
@@ -381,18 +354,16 @@ public class Ball : NetworkBehaviour
                 float speed = v.magnitude;
                 v.y += paddle.MoveInput * steerStrength * steerInterval;
 
-                // Don't let the ball turn too vertical.
                 float maxY = Mathf.Tan(maxSteerAngle * Mathf.Deg2Rad) * Mathf.Abs(v.x);
                 v.y = Mathf.Clamp(v.y, -maxY, maxY);
 
                 s.pos = p;
-                s.vel = v.normalized * speed;   // keep the same speed
+                s.vel = v.normalized * speed;
                 s.time = now;
                 SetState(s);
             }
         }
 
-        // Catch power-up: if the holder never fires (or their message got lost), fire for them.
         if (s.mode == BallMode.Stuck && now - s.time > autoShootAfter + 1.5)
         {
             PlayerPaddle paddle = PlayerPaddle.Get((PlayerSide)s.owner);
@@ -411,7 +382,6 @@ public class Ball : NetworkBehaviour
         double now = NetClock.DisplayNow;
         Vector2 target = PositionOf(s, now);
 
-        // A new path arrived: keep showing the ball where it was and glide onto the new path.
         if (s.version != shown.version || s.hitSeq != shown.hitSeq || hasPredicted != shownPredicted)
         {
             if (shown.mode == BallMode.Moving && s.mode == BallMode.Moving)
@@ -438,7 +408,6 @@ public class Ball : NetworkBehaviour
             _ => Color.white
         };
 
-        // A Catch shot flickers so the other player knows it's coming in fast.
         if (s.fastFrom != 0 && s.mode == BallMode.Moving && Mathf.Repeat(Time.time * 12f, 1f) > 0.5f)
             color = Color.white;
 

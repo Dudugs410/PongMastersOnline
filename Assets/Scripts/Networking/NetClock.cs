@@ -1,8 +1,6 @@
 using Unity.Netcode;
 using UnityEngine;
 
-// A clock both players agree on (the host's clock), plus ping and "is the other side still there?".
-// The client pings the host 10 times a second; each reply tells it how far its clock is from the host's.
 public class NetClock : NetworkBehaviour
 {
     public static NetClock Instance { get; private set; }
@@ -16,19 +14,16 @@ public class NetClock : NetworkBehaviour
     readonly double[] sampleOffset = new double[SampleCount];
     int sampleIndex, samplesTaken;
 
-    double offset;            // host clock - our clock (client only)
+    double offset;
     double lastPingSent;
-    double lastHeardFromPeer; // realtime of the last ping (host) or pong (client)
+    double lastHeardFromPeer;
     bool peerEverHeard;
 
-    // Shared game time, in seconds. On the host this is just its own clock.
     public static double Now =>
         Instance != null && Instance.IsSpawned && !Instance.IsServer
             ? FrameClock + Instance.offset
             : FrameClock;
 
-    // The time things are drawn at. If the client stops hearing from the host it holds still
-    // instead of running ahead, so a connection drop looks like a pause rather than a jump.
     public static double DisplayNow =>
         Instance != null && Instance.IsSpawned && !Instance.IsServer && PeerIsSilent
             ? Instance.displayHeldAt
@@ -36,7 +31,6 @@ public class NetClock : NetworkBehaviour
 
     double displayHeldAt;
 
-    // Real time, read once per frame so everything in a frame agrees on "now".
     static int cachedFrame = -1;
     static double cachedTime;
     static double FrameClock
@@ -54,10 +48,8 @@ public class NetClock : NetworkBehaviour
 
     public static bool IsSynced => Instance != null && Instance.IsSpawned && (Instance.IsServer || Instance.samplesTaken > 0);
 
-    // Round trip time to the other player, in seconds (the client measures it and tells the host).
     public static float Rtt { get; private set; }
 
-    // Seconds since we last heard from the other player (0 if nobody to hear from yet).
     public static float SilenceSeconds =>
         Instance == null || !Instance.peerEverHeard ? 0f
             : (float)(Time.realtimeSinceStartupAsDouble - Instance.lastHeardFromPeer);
@@ -78,7 +70,6 @@ public class NetClock : NetworkBehaviour
         peerEverHeard = false;
     }
 
-    // The host calls this when the opponent leaves, so their silence isn't counted any more.
     public void ForgetPeer()
     {
         peerEverHeard = false;
@@ -121,7 +112,6 @@ public class NetClock : NetworkBehaviour
         sampleIndex = (sampleIndex + 1) % SampleCount;
         samplesTaken = Mathf.Min(samplesTaken + 1, SampleCount);
 
-        // The fastest round trip is the least distorted by queuing, so trust its offset most.
         int best = 0;
         double rttSum = 0;
         for (int i = 0; i < samplesTaken; i++)
@@ -133,8 +123,8 @@ public class NetClock : NetworkBehaviour
 
         double target = sampleOffset[best];
         if (samplesTaken == 1 || System.Math.Abs(target - offset) > 0.25)
-            offset = target;                                                  // first sync or big jump: snap
+            offset = target;
         else
-            offset += System.Math.Clamp(target - offset, -0.002, 0.002);      // otherwise drift gently
+            offset += System.Math.Clamp(target - offset, -0.002, 0.002);
     }
 }

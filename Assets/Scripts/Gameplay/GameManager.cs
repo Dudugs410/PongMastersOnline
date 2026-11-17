@@ -11,15 +11,12 @@ public enum GamePhase : byte
 {
     WaitingForOpponent,
     Playing,
-    Frozen,         // both still connected, but messages stopped arriving
-    OpponentLeft,   // the opponent dropped; holding the match for them to reconnect
-    Resuming,       // countdown before play continues
+    Frozen,
+    OpponentLeft,
+    Resuming,
     MatchOver
 }
 
-// Tracks score, decides points and the winner, pauses the game when the connection breaks,
-// and handles the rematch screen. Everything important lives in NetworkVariables,
-// so both players always see the same numbers.
 public class GameManager : NetworkBehaviour
 {
     public static GameManager Instance { get; private set; }
@@ -29,7 +26,7 @@ public class GameManager : NetworkBehaviour
     public float resumeCountdown = 3f;
 
     [Header("References")]
-    public Ball ball;   // the main ball in the scene
+    public Ball ball;
 
     [Header("HUD")]
     public GameObject hud;
@@ -41,8 +38,8 @@ public class GameManager : NetworkBehaviour
     [Header("Game Over")]
     public GameObject gameOverPanel;
     public TMP_Text winnerText;
-    public GameObject hostRematchButtons;   // "Rematch?" + Yes/No, only the host sees it
-    public GameObject waitingForHostText;   // what the client sees instead
+    public GameObject hostRematchButtons;
+    public GameObject waitingForHostText;
     public Button rematchYesButton;
     public Button rematchNoButton;
 
@@ -54,7 +51,6 @@ public class GameManager : NetworkBehaviour
     readonly NetworkVariable<double> resumeAt = new(0);
     readonly NetworkVariable<FixedString64Bytes> opponentName = new(default);
 
-    // Host only
     readonly HashSet<ulong> leftOnPurpose = new();
     double frozenSince;
     string absentToken;
@@ -62,7 +58,6 @@ public class GameManager : NetworkBehaviour
     public GamePhase Phase => phase.Value;
     public bool IsPlaying => IsSpawned && phase.Value == GamePhase.Playing;
 
-    // Host: true while holding the match for the player who dropped (and only they may join).
     public bool IsWaitingForReconnect => IsServer && IsSpawned && phase.Value == GamePhase.OpponentLeft;
     public string AbsentToken => absentToken;
 
@@ -101,15 +96,12 @@ public class GameManager : NetworkBehaviour
         }
     }
 
-    // ---------- Server: connections ----------
-
     void OnClientConnected(ulong clientId)
     {
         if (clientId == NetworkManager.ServerClientId) return;
 
         if (phase.Value == GamePhase.OpponentLeft)
         {
-            // They're back: pick up where we left off.
             absentToken = null;
             Log("Opponent reconnected");
             BeginResume();
@@ -130,7 +122,6 @@ public class GameManager : NetworkBehaviour
 
         if (midMatch && !onPurpose)
         {
-            // Lost them: freeze everything and hold the match so they can come back.
             absentToken = NetworkMenu.TokenOf(clientId);
             if (phase.Value != GamePhase.Frozen) FreezeAll();
             SetPhase(GamePhase.OpponentLeft);
@@ -142,14 +133,11 @@ public class GameManager : NetworkBehaviour
         }
     }
 
-    // The client calls this just before leaving with the Leave button, so we don't wait for them.
     [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
     public void LeavingRpc(RpcParams rpcParams = default)
     {
         leftOnPurpose.Add(rpcParams.Receive.SenderClientId);
     }
-
-    // ---------- Server: match flow ----------
 
     void SetPhase(GamePhase p)
     {
@@ -178,8 +166,6 @@ public class GameManager : NetworkBehaviour
 
     void FreezeAll()
     {
-        // We only notice the silence a moment after it starts, and the opponent couldn't
-        // report hits during it. Roll the balls back to when we last heard from them.
         frozenSince = NetClock.Now - Mathf.Min(NetClock.SilenceSeconds, 1f);
         foreach (Ball b in Ball.All.ToArray())
             b.Freeze(frozenSince);
@@ -235,7 +221,6 @@ public class GameManager : NetworkBehaviour
         }
     }
 
-    // After the paddles have judged their hits for this frame, see if any ball got past one.
     void LateUpdate()
     {
         if (!IsServer || !IsPlaying) return;
@@ -252,13 +237,10 @@ public class GameManager : NetworkBehaviour
             else if (p.x > PongField.GoalLineX) defender = PlayerSide.Blue;
             else continue;
 
-            // The client judges its own paddle, and its verdict takes a moment to get here.
-            // Wait for it before calling the point.
             PlayerPaddle paddle = PlayerPaddle.Get(defender);
             if (paddle != null && !paddle.IsOwnedByServer)
             {
-                if (NetClock.SilenceSeconds > 0.25f) continue;   // they can't tell us about a hit right now
-
+                if (NetClock.SilenceSeconds > 0.25f) continue;
 
                 double contact = s.TimeAtX(PongField.ContactX(defender, b.radius));
                 double grace = Mathf.Clamp(NetClock.Rtt + 0.1f, 0.1f, 0.6f);
@@ -266,7 +248,7 @@ public class GameManager : NetworkBehaviour
             }
 
             AddPoint(defender == PlayerSide.Red ? PlayerSide.Blue : PlayerSide.Red, b);
-            if (!IsPlaying) return;   // that point ended the match
+            if (!IsPlaying) return;
         }
     }
 
@@ -289,12 +271,10 @@ public class GameManager : NetworkBehaviour
 
         if (scoringBall.isExtraBall)
         {
-            // Extra ball scored: it disappears, the rest keep playing.
             PowerUpManager.Instance.RemoveExtraBall(scoringBall);
         }
         else
         {
-            // Main ball scored: the point is over, clear extra balls and serve again.
             PowerUpManager.Instance.ClearExtraBalls();
             ball.Serve();
         }
@@ -313,8 +293,6 @@ public class GameManager : NetworkBehaviour
     }
 
     static void Log(string message) => Debug.Log("[Pong] " + message);
-
-    // ---------- Connection problems (read by NetworkMenu's overlay) ----------
 
     public bool GetConnectionProblem(out string title, out string detail, out float seconds)
     {
@@ -352,8 +330,6 @@ public class GameManager : NetworkBehaviour
         }
         return false;
     }
-
-    // ---------- UI (runs on both players) ----------
 
     void UpdateUI()
     {

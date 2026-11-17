@@ -4,23 +4,21 @@ using UnityEngine;
 
 public enum PowerUpType : byte { MultiBall, SpeedUp, MoveBall, Grow, Catch }
 
-// A box in the middle of the field. When a ball passes through it, the player who
-// last touched that ball (the ball's color) gets the power-up. PowerUpManager does the checking.
 public class PowerUpBox : NetworkBehaviour
 {
     public const int TypeCount = 5;
 
     public SpriteRenderer spriteRenderer;
-    public TMP_Text label;            // optional: a TextMeshPro child showing a short label
-    public float lifetime = 15f;      // box disappears if nobody takes it
+    public TMP_Text label;
+    public float lifetime = 15f;
     public float halfSize = 0.45f;
 
     [Header("Visuals")]
-    public Color multiBallColor = new(1f, 0.85f, 0.1f);   // yellow
-    public Color speedUpColor = new(0.2f, 1f, 0.3f);      // green
-    public Color moveBallColor = new(0.9f, 0.3f, 1f);     // purple
-    public Color growColor = new(1f, 0.55f, 0.1f);        // orange
-    public Color catchColor = new(0.2f, 0.9f, 1f);        // cyan
+    public Color multiBallColor = new(1f, 0.85f, 0.1f);
+    public Color speedUpColor = new(0.2f, 1f, 0.3f);
+    public Color moveBallColor = new(0.9f, 0.3f, 1f);
+    public Color growColor = new(1f, 0.55f, 0.1f);
+    public Color catchColor = new(0.2f, 0.9f, 1f);
 
     [Header("Icons (optional: replace the colored box and label)")]
     public SpriteRenderer iconRenderer;
@@ -39,7 +37,7 @@ public class PowerUpBox : NetworkBehaviour
     }
 
     public bool Collected { get; private set; }
-    float age;   // only counts while the game is actually being played
+    float age;
 
     public override void OnNetworkSpawn()
     {
@@ -54,7 +52,6 @@ public class PowerUpBox : NetworkBehaviour
         type.OnValueChanged -= OnTypeChanged;
     }
 
-    // Host: called every frame while playing. Returns true once the box has expired.
     public bool Tick(float deltaTime)
     {
         age += deltaTime;
@@ -83,7 +80,6 @@ public class PowerUpBox : NetworkBehaviour
             _ => (catchColor, "CATCH", catchIcon)
         };
 
-        // With an icon, show only the icon; otherwise the colored box with its label.
         bool hasIcon = icon != null && iconRenderer != null;
         if (iconRenderer)
         {

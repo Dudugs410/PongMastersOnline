@@ -9,17 +9,12 @@ using Unity.Netcode.Transports.UTP;
 using UnityEngine;
 using UnityEngine.UI;
 
-// The first screen: the player types a name, then hosts a match or joins one by IP.
-// Also handles leaving, the "room full" check, reconnecting after a dropped connection
-// and the "connection problem" overlay.
 public class NetworkMenu : MonoBehaviour
 {
     public static NetworkMenu Instance { get; private set; }
 
-    // Read by PlayerPaddle when it spawns, so the name gets sent to the other player.
     public static string LocalPlayerName { get; private set; } = "Player";
 
-    // Testing aid (-bot on the command line): the local paddle plays by itself.
     public static bool BotMode { get; private set; }
 
     const string NameKey = "PlayerName";
@@ -51,20 +46,17 @@ public class NetworkMenu : MonoBehaviour
 
     NetworkManager net;
     bool connecting;
-    bool joinedMatch;        // this client got into a match (so a drop means "reconnect", not "failed to join")
+    bool joinedMatch;
     bool leaving;
 
-    // Client: trying to get back into the match after the connection dropped.
     bool reconnecting;
     double reconnectStarted;
     double nextReconnectAttempt;
     int reconnectAttempts;
 
-    // Identifies this player across reconnects, so the host lets the right person back in.
     static string token;
     static readonly Dictionary<ulong, string> tokensByClient = new();
 
-    // Shown on the host's waiting screen so the other player knows what to type.
     public string HostAddress { get; private set; } = "";
 
     public static string TokenOf(ulong clientId) => tokensByClient.TryGetValue(clientId, out string t) ? t : null;
@@ -85,13 +77,11 @@ public class NetworkMenu : MonoBehaviour
     {
         net = NetworkManager.Singleton;
         net.NetworkConfig.ConnectionApproval = true;
-        net.NetworkConfig.TickRate = 60;   // send updates more often for snappier play
+        net.NetworkConfig.TickRate = 60;
         net.ConnectionApprovalCallback = ApproveConnection;
         net.OnClientDisconnectCallback += OnClientDisconnect;
         net.OnClientConnectedCallback += OnClientConnected;
 
-        // Give up on a dead connection after 10 s (the game freezes long before that),
-        // and fail a connection attempt after ~5 s instead of a minute.
         Transport.HeartbeatTimeoutMS = 500;
         Transport.ConnectTimeoutMS = 1000;
         Transport.MaxConnectAttempts = 5;
@@ -109,7 +99,6 @@ public class NetworkMenu : MonoBehaviour
         HandleCommandLine();
     }
 
-    // Handy for testing two copies on one PC:  Pong.exe -name Bob -join 127.0.0.1   (or -host, -bot)
     void HandleCommandLine()
     {
         string[] args = System.Environment.GetCommandLineArgs();
@@ -153,8 +142,6 @@ public class NetworkMenu : MonoBehaviour
         hostButton.interactable = canPress;
         joinButton.interactable = canPress && !string.IsNullOrWhiteSpace(addressInput.text);
 
-        // The transport doesn't always notice a dead connection (e.g. after the PC slept),
-        // so if the host has been silent for as long as its own timeout, start over.
         if (online && !net.IsServer && net.IsConnectedClient && !leaving && !reconnecting &&
             NetClock.SilenceSeconds > Transport.DisconnectTimeoutMS / 1000f)
         {
@@ -190,14 +177,11 @@ public class NetworkMenu : MonoBehaviour
         connectionQuitButton.gameObject.SetActive(seconds >= quitAfter);
     }
 
-    // ---------- Buttons ----------
-
     void Host()
     {
         SaveName();
         tokensByClient.Clear();
 
-        // Listen on every network interface so players on the LAN can reach us.
         Transport.SetConnectionData("127.0.0.1", port, "0.0.0.0");
         HostAddress = $"{GetLocalIPv4()}:{port}";
 
@@ -212,7 +196,6 @@ public class NetworkMenu : MonoBehaviour
         string address = addressInput.text.Trim();
         ushort joinPort = port;
 
-        // Allow "ip:port".
         int colon = address.LastIndexOf(':');
         if (colon > 0 && ushort.TryParse(address[(colon + 1)..], out ushort parsed))
         {
@@ -248,7 +231,6 @@ public class NetworkMenu : MonoBehaviour
         return net.StartClient();
     }
 
-    // Leave button and the Quit button on the connection overlay.
     void Leave()
     {
         if (net.IsServer)
@@ -260,7 +242,7 @@ public class NetworkMenu : MonoBehaviour
         if (reconnecting || !net.IsConnectedClient)
         {
             StopReconnecting();
-            joinedMatch = false;   // so the disconnect this causes isn't taken as a dropped connection
+            joinedMatch = false;
             net.Shutdown();
             ShowMenu("");
             return;
@@ -271,7 +253,6 @@ public class NetworkMenu : MonoBehaviour
 
     IEnumerator LeaveAsClient()
     {
-        // Tell the host this is on purpose, so it doesn't hold the match for us.
         leaving = true;
         if (GameManager.Instance != null && GameManager.Instance.IsSpawned)
             GameManager.Instance.LeavingRpc();
@@ -282,12 +263,10 @@ public class NetworkMenu : MonoBehaviour
         ShowMenu("");
     }
 
-    // Called by Leave on the host, and by GameManager when the host says "No" to a rematch.
     public void EndSession(string message)
     {
         if (net.IsServer)
         {
-            // Tell the other player why they're being sent back to the menu.
             foreach (ulong id in net.ConnectedClientsIds)
                 if (id != NetworkManager.ServerClientId)
                     net.DisconnectClient(id, "The host ended the match.");
@@ -296,8 +275,6 @@ public class NetworkMenu : MonoBehaviour
         net.Shutdown();
         ShowMenu(message);
     }
-
-    // ---------- Reconnecting (client) ----------
 
     void StartReconnecting()
     {
@@ -319,12 +296,10 @@ public class NetworkMenu : MonoBehaviour
         if (Time.realtimeSinceStartupAsDouble < nextReconnectAttempt) return;
 
         reconnectAttempts++;
-        nextReconnectAttempt = double.MaxValue;   // set again if this attempt fails
+        nextReconnectAttempt = double.MaxValue;
         if (!StartClient())
             nextReconnectAttempt = Time.realtimeSinceStartupAsDouble + reconnectInterval;
     }
-
-    // ---------- Network callbacks ----------
 
     void ApproveConnection(NetworkManager.ConnectionApprovalRequest request,
                            NetworkManager.ConnectionApprovalResponse response)
@@ -339,7 +314,6 @@ public class NetworkMenu : MonoBehaviour
         }
         else if (gm != null && gm.IsWaitingForReconnect)
         {
-            // Holding the match: only the player who dropped may come back.
             response.Approved = clientToken == gm.AbsentToken;
             response.Reason = "A match is in progress. Waiting for the other player to reconnect.";
         }
@@ -369,12 +343,9 @@ public class NetworkMenu : MonoBehaviour
 
     void OnClientDisconnect(ulong clientId)
     {
-        // The host keeps running when the opponent leaves; GameManager decides what happens.
         if (net.IsServer) return;
         if (leaving) return;
 
-        // The host's own reasons ("match is full", "host ended the match") are plain sentences.
-        // An empty reason, or one Netcode generated itself, means the connection broke.
         string reason = net.DisconnectReason;
         bool connectionBroke = string.IsNullOrEmpty(reason) || reason.StartsWith("[Disconnect Event]");
         net.Shutdown();
@@ -390,8 +361,6 @@ public class NetworkMenu : MonoBehaviour
         if (connectionBroke) reason = "Couldn't connect to the host.";
         ShowMenu(reason);
     }
-
-    // ---------- Helpers ----------
 
     UnityTransport Transport => (UnityTransport)net.NetworkConfig.NetworkTransport;
 
@@ -415,7 +384,6 @@ public class NetworkMenu : MonoBehaviour
     {
         try
         {
-            // Doesn't actually send anything; it just asks the OS which interface it would use.
             using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
             socket.Connect("8.8.8.8", 65530);
             return ((IPEndPoint)socket.LocalEndPoint).Address.ToString();
