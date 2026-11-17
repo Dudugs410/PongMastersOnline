@@ -362,7 +362,7 @@ public static class PongSceneBuilder
         menu.nameInput = MakeInput("Name Input", panel, "Enter your name...", new Vector2(0f, 115f));
         menu.nameInput.characterLimit = 16;
 
-        Text("Address Label", panel, "Host address (to join)", 40, new Color(1f, 1f, 1f, 0.7f), TextAlignmentOptions.Left,
+        Text("Address Label", panel, "Join code or host IP", 40, new Color(1f, 1f, 1f, 0.7f), TextAlignmentOptions.Left,
              Center, new Vector2(0f, 20f), new Vector2(640f, 60f));
         menu.addressInput = MakeInput("Address Input", panel, "127.0.0.1", new Vector2(0f, -40f));
 

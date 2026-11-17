@@ -1,11 +1,18 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Threading.Tasks;
 using TMPro;
 using Unity.Netcode;
 using Unity.Netcode.Transports.UTP;
+using Unity.Services.Authentication;
+using Unity.Services.Core;
+using Unity.Services.Relay;
+using Unity.Services.Relay.Models;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -21,6 +28,7 @@ public class NetworkMenu : MonoBehaviour
     const string AddressKey = "JoinAddress";
     const string TokenKey = "SessionToken";
     const int MaxPlayers = 2;
+    const string RelayProtocol = "dtls";
 
     public ushort port = 7777;
     [Tooltip("Seconds of connection trouble before the Quit button shows up.")]
@@ -48,6 +56,8 @@ public class NetworkMenu : MonoBehaviour
     bool connecting;
     bool joinedMatch;
     bool leaving;
+    bool working;
+    string relayCode;
 
     bool reconnecting;
     double reconnectStarted;
@@ -57,7 +67,7 @@ public class NetworkMenu : MonoBehaviour
     static string token;
     static readonly Dictionary<ulong, string> tokensByClient = new();
 
-    public string HostAddress { get; private set; } = "";
+    public string HostInfo { get; private set; } = "";
 
     public static string TokenOf(ulong clientId) => tokensByClient.TryGetValue(clientId, out string t) ? t : null;
 
@@ -118,7 +128,7 @@ public class NetworkMenu : MonoBehaviour
             }
             if (args[i] == "-host")
             {
-                Host();
+                HostMatch(false);
                 return;
             }
         }
@@ -138,7 +148,7 @@ public class NetworkMenu : MonoBehaviour
         menuPanel.SetActive((!online || connecting) && !reconnecting);
         leaveButton.gameObject.SetActive(online && !connecting && !reconnecting);
 
-        bool canPress = !connecting && !string.IsNullOrWhiteSpace(nameInput.text);
+        bool canPress = !connecting && !working && !string.IsNullOrWhiteSpace(nameInput.text);
         hostButton.interactable = canPress;
         joinButton.interactable = canPress && !string.IsNullOrWhiteSpace(addressInput.text);
 
@@ -177,23 +187,127 @@ public class NetworkMenu : MonoBehaviour
         connectionQuitButton.gameObject.SetActive(seconds >= quitAfter);
     }
 
-    void Host()
+    void Host() => HostMatch(true);
+
+    async void HostMatch(bool online)
     {
         SaveName();
         tokensByClient.Clear();
+        relayCode = null;
+        string code = null;
 
-        Transport.SetConnectionData("127.0.0.1", port, "0.0.0.0");
-        HostAddress = $"{GetLocalIPv4()}:{port}";
+        if (online)
+        {
+            working = true;
+            messageText.text = "Creating an online match...";
+            try
+            {
+                await SignIn();
+                Allocation allocation = await RelayService.Instance.CreateAllocationAsync(MaxPlayers);
+                code = await RelayService.Instance.GetJoinCodeAsync(allocation.AllocationId);
+                Transport.SetRelayServerData(allocation.ToRelayServerData(RelayProtocol));
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[Pong] Online hosting unavailable: {e.Message}");
+                code = null;
+            }
+            finally
+            {
+                working = false;
+            }
+            if (this == null) return;
+        }
+
+        if (code != null)
+        {
+            GUIUtility.systemCopyBuffer = code;
+            HostInfo = $"Join code: {code}  (copied)";
+        }
+        else
+        {
+            Transport.SetConnectionData("127.0.0.1", port, "0.0.0.0");
+            HostInfo = $"Your address: {GetLocalIPv4()}:{port}";
+            if (online) HostInfo += "\nOnline hosting unavailable: local network only";
+        }
 
         if (!net.StartHost())
-            ShowMenu($"Couldn't host. Is port {port} already in use?");
+            ShowMenu(code != null ? "Couldn't host the match." : $"Couldn't host. Is port {port} already in use?");
+    }
+
+    static async Task SignIn()
+    {
+        if (UnityServices.State != ServicesInitializationState.Initialized)
+        {
+            var options = new InitializationOptions().SetProfile("p" + Guid.NewGuid().ToString("N")[..20]);
+            await UnityServices.InitializeAsync(options);
+        }
+        if (!AuthenticationService.Instance.IsSignedIn)
+            await AuthenticationService.Instance.SignInAnonymouslyAsync();
+    }
+
+    static bool IsJoinCode(string text) => text.Length is >= 6 and <= 12 && text.All(char.IsLetterOrDigit);
+
+    async void JoinWithCode(string code)
+    {
+        working = true;
+        joinedMatch = false;
+        messageText.text = $"Looking for match {code}...";
+        try
+        {
+            await SignIn();
+            JoinAllocation allocation = await RelayService.Instance.JoinAllocationAsync(code);
+            if (this == null) return;
+            working = false;
+            Transport.SetRelayServerData(allocation.ToRelayServerData(RelayProtocol));
+            relayCode = code;
+            if (StartClient())
+            {
+                connecting = true;
+                messageText.text = $"Connecting to match {code}...";
+            }
+            else
+            {
+                ShowMenu("Couldn't start the connection.");
+            }
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning($"[Pong] Couldn't join {code}: {e.Message}");
+            if (this == null) return;
+            ShowMenu(e is RelayServiceException { Reason: RelayExceptionReason.JoinCodeNotFound }
+                ? "No match found with that code."
+                : "Couldn't reach the online service. Check your internet connection.");
+        }
+        finally
+        {
+            working = false;
+        }
+    }
+
+    async void RejoinWithCode()
+    {
+        try
+        {
+            JoinAllocation allocation = await RelayService.Instance.JoinAllocationAsync(relayCode);
+            if (this == null || !reconnecting || relayCode == null) return;
+            Transport.SetRelayServerData(allocation.ToRelayServerData(RelayProtocol));
+            if (StartClient()) return;
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning($"[Pong] Rejoin failed: {e.Message}");
+        }
+        if (this != null && reconnecting)
+            nextReconnectAttempt = Time.realtimeSinceStartupAsDouble + reconnectInterval;
     }
 
     void Join()
     {
         SaveName();
 
-        string address = addressInput.text.Trim();
+        string input = addressInput.text.Trim();
+        string address = input;
         ushort joinPort = port;
 
         int colon = address.LastIndexOf(':');
@@ -206,11 +320,20 @@ public class NetworkMenu : MonoBehaviour
         if (address == "localhost") address = "127.0.0.1";
         if (!IPAddress.TryParse(address, out _))
         {
-            ShowMenu("That isn't a valid IP address.");
+            if (IsJoinCode(input))
+            {
+                PlayerPrefs.SetString(AddressKey, input.ToUpperInvariant());
+                JoinWithCode(input.ToUpperInvariant());
+            }
+            else
+            {
+                ShowMenu("Type a join code or the host's IP address.");
+            }
             return;
         }
 
-        PlayerPrefs.SetString(AddressKey, addressInput.text.Trim());
+        relayCode = null;
+        PlayerPrefs.SetString(AddressKey, input);
         Transport.SetConnectionData(address, joinPort);
         joinedMatch = false;
 
@@ -297,6 +420,11 @@ public class NetworkMenu : MonoBehaviour
 
         reconnectAttempts++;
         nextReconnectAttempt = double.MaxValue;
+        if (relayCode != null)
+        {
+            RejoinWithCode();
+            return;
+        }
         if (!StartClient())
             nextReconnectAttempt = Time.realtimeSinceStartupAsDouble + reconnectInterval;
     }
@@ -368,6 +496,7 @@ public class NetworkMenu : MonoBehaviour
     {
         connecting = false;
         joinedMatch = false;
+        relayCode = null;
         messageText.text = message;
     }
 

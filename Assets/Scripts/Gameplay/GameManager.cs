@@ -347,7 +347,7 @@ public class GameManager : NetworkBehaviour
         statusText.text = phase.Value switch
         {
             GamePhase.WaitingForOpponent when IsServer =>
-                $"Waiting for opponent...\n<size=60%>Your address: {NetworkMenu.Instance.HostAddress}</size>",
+                $"Waiting for opponent...\n<size=60%>{NetworkMenu.Instance.HostInfo}</size>",
             GamePhase.WaitingForOpponent => "Waiting for opponent...",
             GamePhase.Resuming => $"Resuming in {Mathf.CeilToInt((float)(resumeAt.Value - NetClock.Now))}",
             _ => ""
