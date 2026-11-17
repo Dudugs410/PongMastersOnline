@@ -936,11 +936,11 @@ PlayerSettings:
   activeInputHandler: 1
   windowsGamepadBackendHint: 0
   enableDirectStorage: 0
-  cloudProjectId: e941be00-0144-4ea0-9661-23b3228f01f5
+  cloudProjectId: 69cae3c0-f1dd-4e1e-bb14-5c10721911ff
   framebufferDepthMemorylessMode: 0
   qualitySettingsNames: []
   projectName: PongMastersOnline
-  organizationId: dudugs410
+  organizationId: ametistoxs
   cloudEnabled: 0
   legacyClampBlendShapeWeights: 0
   hmiLoadingImage: {fileID: 0}
