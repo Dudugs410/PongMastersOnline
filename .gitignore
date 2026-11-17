@@ -17,7 +17,11 @@
 /[Ll]ibrary/
 /[Tt]emp/
 /[Oo]bj/
-/[Bb]uild/
+/[Bb]uild/*
+!/[Bb]uild/Windows/
+/[Bb]uild/Windows/*_BackUpThisFolder_ButDontShipItWithYourGame/
+/[Bb]uild/Windows/*.rar
+/[Bb]uild/Windows/*.zip
 /[Bb]uilds/
 /[Ll]ogs/
 /[Uu]ser[Ss]ettings/
